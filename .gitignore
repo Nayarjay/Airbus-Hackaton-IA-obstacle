@@ -179,3 +179,13 @@ cython_debug/
 #  refer to https://docs.cursor.com/context/ignore-files
 .cursorignore
 .cursorindexingignore
+airbus_hackathon_trainingdata/scene_1.h5
+airbus_hackathon_trainingdata/scene_10.h5
+airbus_hackathon_trainingdata/scene_2.h5
+airbus_hackathon_trainingdata/scene_3.h5
+airbus_hackathon_trainingdata/scene_4.h5
+airbus_hackathon_trainingdata/scene_5.h5
+airbus_hackathon_trainingdata/scene_6.h5
+airbus_hackathon_trainingdata/scene_7.h5
+airbus_hackathon_trainingdata/scene_8.h5
+airbus_hackathon_trainingdata/scene_9.h5
