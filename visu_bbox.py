@@ -114,7 +114,7 @@ def main():
 
     # Options de Rendu
     opt = vis.get_render_option()
-    opt.background_color = np.asarray([0, 0, 0])  # FOND NOIR
+    opt.background_color = np.asarray([1, 1, 1])  # FOND NOIR
     opt.point_size = 2.0
     opt.line_width = 5.0  # TRAITS ÉPAIS (Pour bien voir les boîtes)
     opt.show_coordinate_frame = True
