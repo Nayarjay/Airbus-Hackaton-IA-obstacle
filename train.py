@@ -232,6 +232,7 @@ def main():
             torch.save(checkpoint, os.path.join(args.checkpoint_dir, f'epoch_{epoch+1}.pth'))
 
     print(f"\nTraining complete! Best mIoU: {100*best_miou:.2f}%")
+    ###ok
 
 
 if __name__ == "__main__":
