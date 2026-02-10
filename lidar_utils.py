@@ -36,9 +36,10 @@ def filter_by_pose(df, pose_row):
 
 def spherical_to_local_cartesian(df):
     """Converts spherical coordinates to local Cartesian (Lidar Frame)."""
-    distance_m = df["distance_cm"].to_numpy() / 100.0
-    azimuth_rad = np.radians(df["azimuth_raw"] / 100.0)
-    elevation_rad = np.radians(df["elevation_raw"] / 100.0)
+    # Use np.asarray to support both Pandas and raw Dict/Numpy inputs
+    distance_m = np.asarray(df["distance_cm"]) / 100.0
+    azimuth_rad = np.radians(np.asarray(df["azimuth_raw"]) / 100.0)
+    elevation_rad = np.radians(np.asarray(df["elevation_raw"]) / 100.0)
 
     x = distance_m * np.cos(elevation_rad) * np.cos(azimuth_rad)
     y = -distance_m * np.cos(elevation_rad) * np.sin(azimuth_rad)

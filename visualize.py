@@ -1,120 +1,113 @@
 import argparse
+import h5py
 import numpy as np
 import open3d as o3d
-import pandas as pd
-from matplotlib import colormaps
-from matplotlib.colors import Normalize
+import os
+import torch
 import lidar_utils
+import inference_utils
+from model_pointnet import PointNetSeg
 
-window_width, window_height = 1280, 720
+# Color Map (same as test_interactive)
+CLASS_COLORS = np.array([
+    [0.15, 0.09, 0.70], # Antenna
+    [0.70, 0.52, 0.18], # Cable
+    [0.50, 0.32, 0.38], # Pole
+    [0.26, 0.52, 0.04], # Turbine
+    [0.50, 0.50, 0.50], # Background
+])
 
-def main():
-    parser = argparse.ArgumentParser(description="Visualize and export Lidar points from an HDF5 file")
-    parser.add_argument("--file", required=True, help="Path to HDF5 lidar file")
-    parser.add_argument("--pose-index", type=int, default=None,
-                        help="Index of the unique pose to visualize (0-based)")
-    parser.add_argument("--cmap", default="turbo", help="Colormap for intensity")
-
-    args = parser.parse_args()
-
-    # 1. Load Data
-    try:
-        df = lidar_utils.load_h5_data(args.file)
-        print(f"Loaded {len(df)} points from {args.file}")
-    except Exception as e:
-        print(f"Error: {e}")
-        return
-
-    if len(df) == 0:
-        print("Dataset contains 0 lidar points. Nothing to visualize.")
-        return
-
-    # 2. Handle Poses
-    pose_counts = lidar_utils.get_unique_poses(df)
-
-    if pose_counts is not None:
-        if args.pose_index is None:
-            # ---- No pose selected → show all poses ----
-            print(pose_counts[["pose_index", "ego_x", "ego_y", "ego_z", "ego_yaw", "num_points"]]
-                  .to_string(index=False, float_format="%.2f"))
-            print("\nUse '--pose-index N' to visualize a specific pose (0-based index).")
-            return
+def find_scenes(file_path):
+    """Detects scene boundaries in an H5 file."""
+    with h5py.File(file_path, 'r') as f:
+        ds = f['lidar_points']
+        N = ds.shape[0]
+        ego_x = ds['ego_x'][:]
+        diff = np.abs(np.diff(ego_x))
+        change_indices = np.where(diff > 100)[0] + 1
+        indices = np.concatenate(([0], change_indices, [N]))
         
-        if args.pose_index < 0 or args.pose_index >= len(pose_counts):
-            print(f"Invalid pose index {args.pose_index}. File has {len(pose_counts)} unique poses.")
-            return
+        scenes = []
+        for i in range(len(indices) - 1):
+            if indices[i+1] - indices[i] > 100:
+                scenes.append((indices[i], indices[i+1]))
+        return scenes
 
-        # ---- Pose selected → filter ----
-        print(pose_counts.loc[pose_counts["pose_index"] == args.pose_index,
-                              ["pose_index", "ego_x", "ego_y", "ego_z", "ego_yaw", "num_points"]]
-              .to_string(index=False, float_format="%.2f"))
+def visualize_frame(file_path, pose_index, model_path=None):
+    scenes = find_scenes(file_path)
+    if pose_index >= len(scenes):
+        print(f"Error: Pose index {pose_index} out of range (Found {len(scenes)} scenes in file).")
+        return
 
-        selected_pose = pose_counts.iloc[args.pose_index]
-        df = lidar_utils.filter_by_pose(df, selected_pose)
-        print(f"\nSelected pose #{args.pose_index} → {len(df)} lidar points")
+    start, end = scenes[pose_index]
+    print(f"Visualizing scene {pose_index} (points {start} to {end}) from {os.path.basename(file_path)}")
 
-    else:
-        print("Pose fields not found in dataset — cannot filter by pose index.")
-
-    # 3. Convert Coordinates
-    xyz = lidar_utils.spherical_to_local_cartesian(df)
-
-    # 4. Visualization (Local Frame)
+    with h5py.File(file_path, 'r') as f:
+        ds = f['lidar_points']
+        data = ds[start:end]
+        
+    # Coordinate Conversion
+    xyz = lidar_utils.spherical_to_local_cartesian({
+        "distance_cm": data['distance_cm'],
+        "azimuth_raw": data['azimuth_raw'],
+        "elevation_raw": data['elevation_raw']
+    })
+    
+    # GT Labels from RGB
+    r, g, b = data['r'], data['g'], data['b']
+    labels = np.full(len(data), 4, dtype=np.int64)
+    labels[(r == 38) & (g == 23) & (b == 180)] = 0
+    labels[(r == 177) & (g == 132) & (b == 47)] = 1
+    labels[(r == 129) & (g == 81) & (b == 97)] = 2
+    labels[(r == 66) & (g == 132) & (b == 9)] = 3
+    
+    # Prediction (Optional)
+    pred_labels = labels # Default to GT if no model
+    if model_path and os.path.exists(model_path):
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        model = PointNetSeg(k=5).to(device)
+        model.load_state_dict(torch.load(model_path, map_location=device, weights_only=True))
+        model.eval()
+        
+        # Sub-sample for model (1024 points)
+        N = len(xyz)
+        indices = np.random.choice(N, 1024, replace=(N < 1024))
+        xyz_sub = xyz[indices]
+        
+        # Norm
+        xyz_norm = xyz_sub - np.mean(xyz_sub, axis=0)
+        max_d = np.max(np.linalg.norm(xyz_norm, axis=1))
+        if max_d > 0: xyz_norm /= max_d
+        
+        inp = torch.from_numpy(xyz_norm).float().transpose(1, 0).unsqueeze(0).to(device)
+        with torch.no_grad():
+            pred, _ = model(inp)
+            pred_labels_sub = pred.data.max(2)[1].cpu().numpy()[0]
+            
+        print("Model prediction complete for subsample.")
+        # For full vis, we just use GT colors for points but we can show BBoxes
+        # Better: just use full points and show boxes
+    
+    # Visualization setup
     pcd = o3d.geometry.PointCloud()
     pcd.points = o3d.utility.Vector3dVector(xyz)
-
-    # --- Apply Coloring ---
-    if {"r", "g", "b"}.issubset(df.columns):
-        print("Using ground-truth RGB colors from dataset")
-        rgb = np.column_stack((
-            df["r"].to_numpy() / 255.0,
-            df["g"].to_numpy() / 255.0,
-            df["b"].to_numpy() / 255.0
-        ))
-        pcd.colors = o3d.utility.Vector3dVector(rgb)
-
-    elif "reflectivity" in df.columns:
-        print("No RGB fields found → using reflectivity colormap")
-        intensities = df["reflectivity"].to_numpy()
-        norm = Normalize(vmin=intensities.min(), vmax=intensities.max())
-        cmap = colormaps.get_cmap(args.cmap)
-        colors = cmap(norm(intensities))[:, :3]
-        pcd.colors = o3d.utility.Vector3dVector(colors)
-
-    else:
-        print("No reflectivity or RGB → using red")
-        pcd.paint_uniform_color([1, 0, 0])
-
-    # --- Launch Viewer ---
-    title = "All LiDAR points"
-    vis = o3d.visualization.Visualizer()
-    vis.create_window(window_name=title, width=window_width, height=window_height)
-    vis.add_geometry(pcd)
-
-    pts = np.asarray(pcd.points)
-    print(f"Bounds X:[{pts[:,0].min():.1f}, {pts[:,0].max():.1f}] "
-          f"Y:[{pts[:,1].min():.1f}, {pts[:,1].max():.1f}] "
-          f"Z:[{pts[:,2].min():.1f}, {pts[:,2].max():.1f}]")
-
-    ctrl = vis.get_view_control()
-
-    # Exact camera settings
-    cam_pos = np.array([0.0, 0.0, 0.0])   # Lidar position in local frame
-    forward = np.array([1.0, 0.0, 0.0])   # Lidar points forward along X-axis
-    up = np.array([0.0, 0.0, 1.0])        # Z-axis is up
+    pcd.colors = o3d.utility.Vector3dVector(CLASS_COLORS[labels])
     
-    lookat = cam_pos + 10.0 * forward
-
-    ctrl.set_lookat(lookat)
-    ctrl.set_front(-forward)
-    ctrl.set_up(up)
-    ctrl.set_zoom(0.1)
-
-    render_opt = vis.get_render_option()
-    render_opt.point_size = 2.0
+    # Bounding Boxes
+    boxes_data = inference_utils.get_boxes_from_segmentation(xyz, labels)
+    bbox_geos = []
+    for box in boxes_data:
+        color = CLASS_COLORS[box["class_id"]]
+        bbox_geos.append(inference_utils.create_o3d_box_visual(box["center"], box["dims"], color))
     
-    vis.run()
-    vis.destroy_window()
+    print(f"Showing {len(bbox_geos)} objects.")
+    o3d.visualization.draw_geometries([pcd] + bbox_geos, window_name=f"Pose {pose_index} - {os.path.basename(file_path)}")
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--file", type=str, required=True, help="Path to H5 file")
+    parser.add_argument("--pose-index", type=int, default=0, help="Index of the pose/scene to visualize")
+    parser.add_argument("--model", type=str, default="models/pointnet_segmentation.pth", help="Path to model for prediction")
+    args = parser.parse_args()
+    
+    visualize_frame(args.file, args.pose_index, args.model)
