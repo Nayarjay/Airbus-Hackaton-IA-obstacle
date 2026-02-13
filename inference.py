@@ -128,31 +128,40 @@ def run_inference_blocked(h5_file, model_path):
 
                             cluster_pts = points_of_interest[labels == label]
 
-                            # Calcul BBox
-                            bbox = get_oriented_bbox(cluster_pts)
+                            MIN_CLUSTER_PTS = {0: 15, 1: 20, 2: 30, 3: 50}  # ajuste si besoin
+                            if len(cluster_pts) < MIN_CLUSTER_PTS.get(real_class_id, 20):
+                                continue
 
-                            if bbox:
-                                # On stocke temporairement pour filtrer les doublons plus tard
-                                # Format interne simple
-                                frame_detections.append({
-                                    'bbox': bbox,
-                                    'class_id': real_class_id,
-                                    'center': np.array([bbox[0], bbox[1], bbox[2]])
-                                })
+                            bbox = get_oriented_bbox(cluster_pts)
+                            if bbox is None:
+                                continue
+
+                            # On stocke pour filtrer les doublons plus tard
+                            frame_detections.append({
+                                'bbox': bbox,
+                                'class_id': real_class_id,
+                                'center': np.array([bbox[0], bbox[1], bbox[2]])
+                            })
 
         # G. Fusion des doublons (Non-Maximum Suppression simplifiée)
         # Comme les blocs se chevauchent, on peut détecter le même poteau 2 fois.
         # On va fusionner les boîtes très proches.
         kept_detections = []
         for det in frame_detections:
-            is_new = True
-            for kept in kept_detections:
-                # Si même classe et centres très proches (< 2m)
+            merged = False
+            for i, kept in enumerate(kept_detections):
                 dist = np.linalg.norm(det['center'] - kept['center'])
                 if det['class_id'] == kept['class_id'] and dist < 2.0:
-                    is_new = False
+                    # garde la bbox avec le plus grand volume
+                    b1 = det['bbox'];
+                    b2 = kept['bbox']
+                    vol1 = b1[3] * b1[4] * b1[5]
+                    vol2 = b2[3] * b2[4] * b2[5]
+                    if vol1 > vol2:
+                        kept_detections[i] = det
+                    merged = True
                     break
-            if is_new:
+            if not merged:
                 kept_detections.append(det)
 
         # H. Enregistrement final pour cette frame

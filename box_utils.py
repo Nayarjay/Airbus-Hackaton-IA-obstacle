@@ -39,7 +39,7 @@ def get_oriented_bbox(points_xyz):
         # 1. Projection 2D (XY)
         points_2d = points_xyz[:, :2]
 
-        # ✅ Pré-check: si variance totale ~ 0, on skip PCA (évite le warning sklearn)
+        # ✅ Pré-check: si variance totale ~ 0, on skip PCA
         total_var = np.var(points_2d, axis=0).sum()
         if total_var < 1e-12:
             yaw = 0.0
@@ -53,13 +53,6 @@ def get_oriented_bbox(points_xyz):
                 yaw = 0.0
 
         #pca.fit(points_2d)
-
-        # Vérification si la variance est nulle (points tous au même endroit)
-        if np.sum(pca.explained_variance_) < 1e-9:
-            yaw = 0.0
-        else:
-            vec = pca.components_[0]
-            yaw = np.arctan2(vec[1], vec[0])
 
     except Exception:
         # En cas d'erreur mathématique quelconque, on met la boîte droite
@@ -79,10 +72,9 @@ def get_oriented_bbox(points_xyz):
     dims_xy = max_xy - min_xy
     height = max_z - min_z
 
-    # Sécurité: éviter les boîtes plates (épaisseur 0)
-    dims_xy[0] = max(dims_xy[0], 0.1)
-    dims_xy[1] = max(dims_xy[1], 0.1)
-    height = max(height, 0.1)
+    # ❌ Rejeter les clusters trop petits (évite les mini-boxes)
+    if dims_xy[0] < 0.2 or dims_xy[1] < 0.2 or height < 0.2:
+        return None
 
     # 4. Centre
     center_aligned_x = min_xy[0] + dims_xy[0] / 2

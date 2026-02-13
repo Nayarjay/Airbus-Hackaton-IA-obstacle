@@ -27,6 +27,8 @@ class AirbusLidarDataset(Dataset):
                        (self.df['g'] == rgb[1]) & \
                        (self.df['b'] == rgb[2])
                 self.labels[mask] = class_id + 1
+        else:
+            self.labels = np.zeros(len(self.df), dtype=np.int64)
 
         # 4. Indexation rapide des frames
         self.poses = lidar_utils.get_unique_poses(self.df)

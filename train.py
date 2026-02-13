@@ -18,6 +18,37 @@ EPOCHS = 10  # Nombre de tours complets (30-50 est bien)
 LR = 0.001  # Vitesse d'apprentissage
 NUM_POINTS = 4096  # Doit correspondre à inference.py
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+print(DEVICE)
+
+def compute_class_weights(datasets, num_classes=5, max_points_per_file=200000):
+    """
+    Calcule des poids inverses aux fréquences de classes.
+    On échantillonne un nombre limité de points par fichier pour aller vite.
+    """
+    counts = np.zeros(num_classes, dtype=np.int64)
+
+    for ds in datasets:
+        labels = ds.labels  # numpy array (0..4) dans dataset.py
+        if labels is None or len(labels) == 0:
+            continue
+
+        if len(labels) > max_points_per_file:
+            idx = np.random.choice(len(labels), max_points_per_file, replace=False)
+            labels = labels[idx]
+
+        for c in range(num_classes):
+            counts[c] += np.sum(labels == c)
+
+    counts = np.maximum(counts, 1)  # éviter division par 0
+    freqs = counts / counts.sum()
+
+    # poids ~ 1/freq (normalisés)
+    inv = 1.0 / freqs
+    inv = inv / inv.mean()
+
+    # Option: on réduit un peu le poids du fond
+    inv[0] *= 0.2
+    return torch.tensor(inv, dtype=torch.float32), counts, freqs
 
 
 def train():
@@ -66,11 +97,14 @@ def train():
     # Scheduler : Réduit le Learning Rate quand ça stagne (optionnel mais recommandé)
     scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=15, gamma=0.5)
 
-    # 5. Gestion du déséquilibre des classes (Weights)
-    # C'est ICI qu'on force le modèle à apprendre les câbles
-    # Poids : [Fond, Antenne, Câble, Poteau, Éolienne]
-    # On met 0.1 au fond pour l'ignorer un peu, et 20.0 aux câbles pour les prioriser
-    weights = torch.tensor([0.1, 5.0, 20.0, 10.0, 5.0]).to(DEVICE)
+    # 5. Gestion du déséquilibre des classes (Weights) - auto
+    weights, counts, freqs = compute_class_weights(train_datasets, num_classes=5)
+
+    print("Class counts (train):", counts)
+    print("Class freqs  (train):", freqs)
+    print("Class weights(train):", weights.numpy())
+
+    weights = weights.to(DEVICE)
     criterion = nn.CrossEntropyLoss(weight=weights)
 
     # Variables pour sauvegarder le meilleur modèle
