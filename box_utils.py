@@ -36,8 +36,23 @@ def get_oriented_bbox(points_xyz):
 
     # --- PROTECTION ANTI-CRASH PCA ---
     try:
-        pca = PCA(n_components=2)
-        pca.fit(points_2d)
+        # 1. Projection 2D (XY)
+        points_2d = points_xyz[:, :2]
+
+        # ✅ Pré-check: si variance totale ~ 0, on skip PCA (évite le warning sklearn)
+        total_var = np.var(points_2d, axis=0).sum()
+        if total_var < 1e-12:
+            yaw = 0.0
+        else:
+            try:
+                pca = PCA(n_components=2)
+                pca.fit(points_2d)
+                vec = pca.components_[0]
+                yaw = np.arctan2(vec[1], vec[0])
+            except Exception:
+                yaw = 0.0
+
+        #pca.fit(points_2d)
 
         # Vérification si la variance est nulle (points tous au même endroit)
         if np.sum(pca.explained_variance_) < 1e-9:

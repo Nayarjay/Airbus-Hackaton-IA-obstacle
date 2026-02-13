@@ -14,7 +14,7 @@ from model import PointNetSeg
 # --- CONFIGURATION ---
 DATA_DIR = "airbus_hackathon_trainingdata"  # Dossier contenant les .h5
 BATCH_SIZE = 16  # Taille du paquet (réduire à 8 si erreur de mémoire GPU)
-EPOCHS = 40  # Nombre de tours complets (30-50 est bien)
+EPOCHS = 10  # Nombre de tours complets (30-50 est bien)
 LR = 0.001  # Vitesse d'apprentissage
 NUM_POINTS = 4096  # Doit correspondre à inference.py
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -70,8 +70,8 @@ def train():
     # C'est ICI qu'on force le modèle à apprendre les câbles
     # Poids : [Fond, Antenne, Câble, Poteau, Éolienne]
     # On met 0.1 au fond pour l'ignorer un peu, et 20.0 aux câbles pour les prioriser
-    class_weights = torch.tensor([0.1, 5.0, 20.0, 10.0, 5.0]).to(DEVICE)
-    criterion = nn.CrossEntropyLoss(weight=class_weights)
+    weights = torch.tensor([0.1, 5.0, 20.0, 10.0, 5.0]).to(DEVICE)
+    criterion = nn.CrossEntropyLoss(weight=weights)
 
     # Variables pour sauvegarder le meilleur modèle
     best_val_loss = float('inf')

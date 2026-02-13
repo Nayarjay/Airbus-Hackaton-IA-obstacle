@@ -34,6 +34,9 @@ def run_inference_blocked(h5_file, model_path):
     # 2. Charger les données
     try:
         df = lidar_utils.load_h5_data(h5_file)
+        # IMPORTANT: enlever les retours invalides (distance_cm=0 => points (0,0,0))
+        df = df[df["distance_cm"] > 0].copy()
+
     except Exception as e:
         print(f"Erreur chargement: {e}")
         return
