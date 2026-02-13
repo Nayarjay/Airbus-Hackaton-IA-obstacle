@@ -11,6 +11,7 @@ from model import PointNetSeg
 from box_utils import get_oriented_bbox, DBSCAN_PARAMS, CLASS_NAMES
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+print(DEVICE)
 NUM_POINTS_INFERENCE = 4096
 
 # Taille des blocs pour le découpage (en mètres)
