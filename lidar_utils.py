@@ -1,47 +1,59 @@
-import h5py
 import numpy as np
-import pandas as pd
+import h5py
 
-def load_h5_data(file_path, dataset_name="lidar_points"):
-    """Loads HDF5 data into a Pandas DataFrame."""
-    with h5py.File(file_path, "r") as f:
-        if dataset_name not in f:
-            raise ValueError(f"Dataset '{dataset_name}' not found in {file_path}")
-        points = f[dataset_name][:]
-    
-    return pd.DataFrame({name: points[name] for name in points.dtype.names})
+POSE_FIELDS = ("ego_x", "ego_y", "ego_z", "ego_yaw")
 
-def get_unique_poses(df):
-    """Returns a DataFrame of unique poses with a 'pose_index'."""
-    pose_fields = ["ego_x", "ego_y", "ego_z", "ego_yaw"]
-    if not all(f in df.columns for f in pose_fields):
-        return None
-    
-    pose_counts = (
-        df.groupby(pose_fields)
-        .size()
-        .reset_index(name="num_points")
-        .reset_index(names="pose_index")
-    )
-    return pose_counts
+def iter_pose_ranges(ds, chunk_size=2_000_000):
+    """
+    Yield: (pose_dict, start, end) pour chaque bloc contigu de même pose.
+    """
+    n = ds.shape[0]
+    start = 0
 
-def filter_by_pose(df, pose_row):
-    """Filters the dataframe for a specific pose quadruplet."""
-    return df[
-        (df["ego_x"] == pose_row["ego_x"]) &
-        (df["ego_y"] == pose_row["ego_y"]) &
-        (df["ego_z"] == pose_row["ego_z"]) &
-        (df["ego_yaw"] == pose_row["ego_yaw"])
-    ].reset_index(drop=True)
+    # Lire la première pose
+    first = ds[0]
+    current_pose = tuple(float(first[f]) for f in POSE_FIELDS)
 
-def spherical_to_local_cartesian(df):
-    """Converts spherical coordinates to local Cartesian (Lidar Frame)."""
-    distance_m = df["distance_cm"].to_numpy() / 100.0
-    azimuth_rad = np.radians(df["azimuth_raw"] / 100.0)
-    elevation_rad = np.radians(df["elevation_raw"] / 100.0)
+    i = 0
+    while i < n:
+        j = min(n, i + chunk_size)
+        chunk = ds[i:j]
 
-    x = distance_m * np.cos(elevation_rad) * np.cos(azimuth_rad)
-    y = -distance_m * np.cos(elevation_rad) * np.sin(azimuth_rad)
-    z = distance_m * np.sin(elevation_rad)
+        poses = np.vstack([chunk[f].astype(np.float32) for f in POSE_FIELDS]).T  # (M,4)
 
-    return np.column_stack((x, y, z))
+        # repérer où la pose change
+        diffs = np.any(poses[1:] != poses[:-1], axis=1)
+        change_idx = np.where(diffs)[0]
+
+        if change_idx.size == 0:
+            i = j
+            continue
+
+        # traiter les changements un par un (dans ce chunk)
+        for rel in change_idx:
+            # rel = index dans (poses[1:] vs poses[:-1]) donc coupure à i+rel+1
+            cut = i + rel + 1
+
+            pose_dict = {k: current_pose[t] for t, k in enumerate(POSE_FIELDS)}
+            yield pose_dict, start, cut
+
+            # nouvelle pose
+            nxt = ds[cut]
+            current_pose = tuple(float(nxt[f]) for f in POSE_FIELDS)
+            start = cut
+
+        i = j
+
+    # dernier bloc
+    pose_dict = {k: current_pose[t] for t, k in enumerate(POSE_FIELDS)}
+    yield pose_dict, start, n
+
+def open_lidar_dataset(h5_path: str):
+    f = h5py.File(h5_path, "r")
+    # Support underscore OU dash
+    if "lidar_points" in f:
+        return f, f["lidar_points"]
+    if "lidar-points" in f:
+        return f, f["lidar-points"]
+    raise ValueError(f"Aucun dataset lidar_points / lidar-points trouvé dans {h5_path}. Clés: {list(f.keys())}")
+

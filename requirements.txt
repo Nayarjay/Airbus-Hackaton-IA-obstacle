@@ -1,9 +1,9 @@
 numpy
 pandas
 h5py
-tables
-open3d
 scikit-learn
-torch
 tqdm
+torch
+torchvision
+open3d
 matplotlib
