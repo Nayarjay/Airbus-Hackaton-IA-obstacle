@@ -18,7 +18,7 @@ def get_unique_poses(df):
         return None
     
     pose_counts = (
-        df.groupby(pose_fields)
+        df.groupby(pose_fields, sort=False)
         .size()
         .reset_index(name="num_points")
         .reset_index(names="pose_index")
