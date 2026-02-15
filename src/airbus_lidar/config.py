@@ -20,7 +20,7 @@ class DataConfig:
 
 @dataclass
 class TrainConfig:
-    epochs: int = 70
+    epochs: int = 150
     batch_size: int = 8
     lr: float = 1e-4
     weight_decay: float = 1e-4
