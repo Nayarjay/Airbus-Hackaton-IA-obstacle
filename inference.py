@@ -205,11 +205,30 @@ def main():
 
     # Load model
     print(f"Loading model from {args.model}")
-    model = PointNetSegmentation(num_classes=NUM_CLASSES, input_channels=4)
-    checkpoint = torch.load(args.model, map_location=device)
-    model.load_state_dict(checkpoint['model_state_dict'])
+    checkpoint = torch.load(args.model, map_location=device, weights_only=False)
+
+    # Strip _orig_mod. prefix if model was saved with torch.compile()
+    state_dict = checkpoint['model_state_dict']
+    state_dict = {k.replace('_orig_mod.', ''): v for k, v in state_dict.items()}
+
+    # Detect if enhanced decoder was used
+    enhanced_decoder = 'conv0.weight' in state_dict
+    print(f"  Enhanced decoder: {enhanced_decoder}")
+
+    model = PointNetSegmentation(
+        num_classes=NUM_CLASSES,
+        input_channels=4,
+        enhanced_decoder=enhanced_decoder
+    )
+    model.load_state_dict(state_dict)
     model = model.to(device)
     model.eval()
+
+    # Print model info
+    if 'best_miou' in checkpoint:
+        print(f"  Best mIoU: {checkpoint['best_miou']*100:.2f}%")
+    param_count = sum(p.numel() for p in model.parameters())
+    print(f"  Parameters: {param_count:,}")
 
     # Collect input files
     if os.path.isdir(args.input):

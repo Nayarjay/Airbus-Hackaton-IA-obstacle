@@ -117,20 +117,29 @@ class PointNetEncoder(nn.Module):
 
 
 class PointNetSegmentation(nn.Module):
-    """PointNet for semantic segmentation."""
+    """PointNet for semantic segmentation with enhanced decoder."""
 
-    def __init__(self, num_classes=5, input_channels=4, feature_transform=True):
+    def __init__(self, num_classes=5, input_channels=4, feature_transform=True, enhanced_decoder=True):
         super().__init__()
         self.num_classes = num_classes
         self.feature_transform = feature_transform
+        self.enhanced_decoder = enhanced_decoder
 
         self.encoder = PointNetEncoder(
             input_channels=input_channels,
             feature_transform=feature_transform
         )
 
-        # Segmentation head
-        self.conv1 = nn.Conv1d(1088, 512, 1)  # 1024 + 64 = 1088
+        # Segmentation head (enhanced decoder with extra layer)
+        if enhanced_decoder:
+            # v3: decoder renforcé
+            self.conv0 = nn.Conv1d(1088, 1024, 1)  # Extra layer
+            self.bn0 = nn.BatchNorm1d(1024)
+            self.conv1 = nn.Conv1d(1024, 512, 1)
+        else:
+            # Original decoder
+            self.conv1 = nn.Conv1d(1088, 512, 1)  # 1024 + 64 = 1088
+
         self.conv2 = nn.Conv1d(512, 256, 1)
         self.conv3 = nn.Conv1d(256, 128, 1)
         self.conv4 = nn.Conv1d(128, num_classes, 1)
@@ -152,7 +161,12 @@ class PointNetSegmentation(nn.Module):
         concat_features = torch.cat([point_features, global_feature], dim=1)  # [B, 1088, N]
 
         # Segmentation MLP
-        x = F.relu(self.bn1(self.conv1(concat_features)))
+        if self.enhanced_decoder:
+            x = F.relu(self.bn0(self.conv0(concat_features)))
+            x = F.relu(self.bn1(self.conv1(x)))
+        else:
+            x = F.relu(self.bn1(self.conv1(concat_features)))
+
         x = F.relu(self.bn2(self.conv2(x)))
         x = F.relu(self.bn3(self.conv3(x)))
         x = self.dropout(x)
