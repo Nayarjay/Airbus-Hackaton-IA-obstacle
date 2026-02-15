@@ -1,5 +1,9 @@
 # Airbus Hackathon IA — Détection d'obstacles LiDAR
 
+## Groupe : IAobstacle
+
+Membres : Mohamed Rayan Boudiba, Hugo Dubois, Ahmed Sef, Ahmet Emin Cifci, Cheikh Sarr
+
 ## Description
 
 Ce projet propose un pipeline complet de détection et classification d'obstacles 3D à partir de nuages de points LiDAR, développé dans le cadre du Hackathon Airbus Helicopters.
@@ -48,19 +52,21 @@ Permet à l'utilisateur d'inspecter visuellement les résultats frame par frame 
 - Flèches gauche/droite ou A/D : frame précédente/suivante
 - Flèches haut/bas ou W/S : sauter de ±10 frames
 
+Exemple de paramètres à ajouter dans la configuration : --file "C:\Users\hugom\PycharmProjects\Airbus-Hackaton-IA-obstacle\airbus_hackathon_evalset\eval_sceneA_100.h5" --pose-index 1 --mode pred
+
 ```bash
 # Visualiser les labels ground truth
-python scripts/visualize_bboxes.py --file <chemin_fichier.h5> --mode gt
+python scripts/visualize_bboxes.py --file <chemin_fichier.h5> --pose-index <frame de depart souhaitée> --mode gt
 
 # Visualiser les prédictions du modèle
-python scripts/visualize_bboxes.py --file <chemin_fichier.h5> --mode pred --checkpoint checkpoints/pointnet_seg_best.pt
+python scripts/visualize_bboxes.py --file <chemin_fichier.h5> --pose-index <frame de depart souhaitée> --mode pred
 ```
 
 ### 3. `run_eval_export.py` — Inférence et export CSV
 
 Exécute l'inférence sur l'ensemble des fichiers HDF5 d'évaluation (2 scènes × 4 densités de points) et exporte les prédictions sous forme de fichiers CSV dans `predictions_csv/`.
 
-Les fichiers d'évaluation traités :
+Les fichiers d'évaluation traités (à modifier en fonction de ce sur quoi on souhaite faire l'inférence) :
 - `eval_sceneA_100.h5`, `eval_sceneA_75.h5`, `eval_sceneA_50.h5`, `eval_sceneA_25.h5`
 - `eval_sceneB_100.h5`, `eval_sceneB_75.h5`, `eval_sceneB_50.h5`, `eval_sceneB_25.h5`
 
