@@ -1,6 +1,9 @@
 numpy
 pandas
 h5py
+scikit-learn
+tqdm
+torch
+torchvision
 open3d
 matplotlib
-torch
